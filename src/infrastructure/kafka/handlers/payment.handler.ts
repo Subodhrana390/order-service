@@ -1,7 +1,7 @@
-import { MainOrderService } from "../../../services/mainOrder.service.js";
+import { mainOrderService } from "../../../services/index.js";
 
 export class PaymentEventHandler {
-  private mainOrderService = new MainOrderService();
+  private mainOrderService = mainOrderService;
 
   async handle(event: any) {
     const { type, payload } = event;

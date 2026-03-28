@@ -6,7 +6,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { v4 as uuid } from "uuid";
 
 export class VendorOrderController {
-  constructor(private readonly vendorOrderService: VendorOrderService) {}
+  constructor(private readonly vendorOrderService: VendorOrderService) { }
 
   acceptVendorOrder = asyncHandler(async (req: Request, res: Response) => {
     const vendorOrderId = req.params.vendorOrderId as string;
@@ -39,66 +39,53 @@ export class VendorOrderController {
       );
   });
 
-  startProcessing = asyncHandler(async (req: Request, res: Response) => {
+  startPacking = asyncHandler(async (req: Request, res: Response) => {
     const vendorOrderId = req.params.vendorOrderId as string;
     if (!vendorOrderId) throw new ApiError(400, "vendorOrderId is required");
 
     const vendorOrder =
-      await this.vendorOrderService.startProcessing(vendorOrderId);
+      await this.vendorOrderService.startPacking(vendorOrderId);
 
     res
       .status(200)
       .json(
-        new ApiResponse(200, vendorOrder, "Vendor order moved to processing"),
+        new ApiResponse(200, vendorOrder, "Vendor order moved to packing"),
       );
   });
 
-  assignRider = asyncHandler(async (req: Request, res: Response) => {
-    const vendorOrderId = req.params.vendorOrderId as string;
-    if (!vendorOrderId) throw new ApiError(400, "vendorOrderId is required");
-
-    const riderInformation = {
-      riderId: uuid(),
-      name: "Rider 1",
-      phone: "9876543210",
-      assignedAt: new Date(),
-    };
-
-    const vendorOrder = await this.vendorOrderService.assignRider(
-      vendorOrderId,
-      riderInformation,
-    );
-
-    res
-      .status(200)
-      .json(new ApiResponse(200, vendorOrder, "Rider assigned successfully"));
-  });
-
-  markOutForDelivery = asyncHandler(async (req: Request, res: Response) => {
+  markReadyForPickup = asyncHandler(async (req: Request, res: Response) => {
     const vendorOrderId = req.params.vendorOrderId as string;
     if (!vendorOrderId) throw new ApiError(400, "vendorOrderId is required");
 
     const vendorOrder =
-      await this.vendorOrderService.markOutForDelivery(vendorOrderId);
+      await this.vendorOrderService.markReadyForPickup(vendorOrderId);
 
     res
       .status(200)
-      .json(new ApiResponse(200, vendorOrder, "Order is out for delivery"));
+      .json(
+        new ApiResponse(200, vendorOrder, "Vendor order marked as ready for pickup"),
+      );
   });
 
   getShopOrders = asyncHandler(async (req: Request, res: Response) => {
-    const shopId = req.params.shopId as string;
+    const shopId = req.params.vendorId as string;
     if (!shopId) throw new ApiError(400, "shopId is required");
 
-    const orders = await this.vendorOrderService.getShopOrders(shopId);
+    const { cursor, limit = "10" } = req.query;
 
-    res
-      .status(200)
-      .json(new ApiResponse(200, orders, "Shop orders fetched successfully"));
+    const result = await this.vendorOrderService.getShopOrders(
+      shopId,
+      cursor as string | undefined,
+      Number(limit),
+    );
+
+    res.status(200).json(
+      new ApiResponse(200, result, "Shop orders fetched successfully"),
+    );
   });
 
   getById = asyncHandler(async (req: Request, res: Response) => {
-    const id = req.params.id as string;
+    const id = req.params.orderId as string;
     if (!id) throw new ApiError(400, "vendorOrderId is required");
 
     const order = await this.vendorOrderService.getById(id);
@@ -109,7 +96,7 @@ export class VendorOrderController {
   });
 
   updateStatus = asyncHandler(async (req: Request, res: Response) => {
-    const id = req.params.id as string;
+    const id = req.params.orderId as string;
     const { status } = req.body;
     if (!id) throw new ApiError(400, "vendorOrderId is required");
     if (!status) throw new ApiError(400, "status is required");

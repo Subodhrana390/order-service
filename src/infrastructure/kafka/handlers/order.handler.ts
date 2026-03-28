@@ -1,21 +1,15 @@
+import {
+  mainOrderService,
+  paymentService,
+  vendorOrderService
+} from "../../../services/index.js";
 import { PaymentMethod } from "../../../infrastructure/interfaces/order.interface.js";
-import { MainOrderService } from "../../../services/mainOrder.service.js";
-import { PaymentService } from "../../../services/payment.service.js";
-
-interface CancelOrderPayload {
-  orderId: string;
-  reason?: string;
-  paymentMethod?: PaymentMethod;
-  refundBankDetails?: {
-    accountName: string;
-    bankName: string;
-    ifscCode: string;
-  };
-}
 
 export class OrderEventHandler {
-  private mainOrderService = new MainOrderService();
-  private paymentService = new PaymentService();
+  private mainOrderService = mainOrderService;
+  private paymentService = paymentService;
+  private vendorOrderService = vendorOrderService;
+
 
   async handle(event: any) {
     const { type, payload } = event;
@@ -26,6 +20,51 @@ export class OrderEventHandler {
       case "vendor-order.status_updated":
         if (payload.mainOrderId) {
           await this.mainOrderService.updateOrderStatus(payload.mainOrderId);
+        }
+        break;
+
+      case "vendor-order.prescription_verified":
+        if (payload.mainOrderId) {
+          await this.mainOrderService.updateOrderStatus(payload.mainOrderId);
+        }
+        break;
+
+      case "delivery.rider_assigned":
+        if (payload.mainOrderId) {
+          const orderDetails =
+            await this.mainOrderService.getOrderDetails(
+              payload.mainOrderId
+            );
+
+          const shopIds = orderDetails.vendorOrders.map(
+            (v: { shopId: string }) => v.shopId
+          );
+
+          for (const shopId of shopIds) {
+            await this.vendorOrderService.updateVendorOrderRiderAssignment(
+              payload.mainOrderId,
+              shopId,
+              payload.riderInfo
+            );
+          }
+
+          await this.mainOrderService.updateOrderStatus(
+            payload.mainOrderId
+          );
+
+        }
+        break;
+
+      case "delivery.order_delivered":
+        if (payload.mainOrderId) {
+
+          await this.vendorOrderService.markOrdersDelivered(
+            payload.mainOrderId
+          );
+
+          await this.mainOrderService.updateOrderStatus(
+            payload.mainOrderId
+          );
         }
         break;
 

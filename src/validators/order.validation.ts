@@ -49,7 +49,6 @@ export const createOrderSchema = z.object({
 });
 
 export const cancelOrderSchema = z.object({
-  orderId: z.string().min(1),
   reason: z.string().min(1),
   bankDetails: z
     .object({

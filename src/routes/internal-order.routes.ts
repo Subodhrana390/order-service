@@ -1,14 +1,12 @@
 import { Router } from "express";
 import { MainOrderController } from "../controllers/mainOrder.controller.js";
 import { VendorOrderController } from "../controllers/vendorOrder.controller.js";
-import { MainOrderService } from "../services/mainOrder.service.js";
-import { VendorOrderService } from "../services/VendorOrder.service.js";
-import { PaymentService } from "../services/payment.service.js";
-import { InventoryService } from "../services/inventory.service.js";
-const paymentService = new PaymentService();
-const vendorOrderService = new VendorOrderService();
-const mainOrderService = new MainOrderService();
-const inventoryService = new InventoryService();
+import {
+    paymentService,
+    vendorOrderService,
+    mainOrderService,
+    inventoryService,
+} from "../services/index.js";
 
 const mainOrderController = new MainOrderController(
     mainOrderService,

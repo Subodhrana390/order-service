@@ -3,10 +3,12 @@ import { MainOrderController } from "../controllers/mainOrder.controller.js";
 import { VendorOrderController } from "../controllers/vendorOrder.controller.js";
 import { authenticateJWT } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.js";
-import { InventoryService } from "../services/inventory.service.js";
-import { MainOrderService } from "../services/mainOrder.service.js";
-import { PaymentService } from "../services/payment.service.js";
-import { VendorOrderService } from "../services/VendorOrder.service.js";
+import {
+  paymentService,
+  vendorOrderService,
+  inventoryService,
+  mainOrderService
+} from "../services/index.js";
 import {
   cancelOrderSchema,
   createOrderSchema,
@@ -16,58 +18,63 @@ import {
 const router = Router();
 router.use(authenticateJWT);
 
-const paymentService = new PaymentService();
-const vendorOrderService = new VendorOrderService();
-const mainOrderService = new MainOrderService();
-const inventoryService = new InventoryService();
-
 const mainOrderController = new MainOrderController(
   mainOrderService,
   paymentService,
   vendorOrderService,
-  inventoryService,
+  inventoryService
 );
-const vendorOrderController = new VendorOrderController(vendorOrderService);
 
-// Main Order Routes
+const vendorOrderController = new VendorOrderController(
+  vendorOrderService,
+);
+
 router.post("/", validate(createOrderSchema), mainOrderController.create);
+
 router.get("/user", mainOrderController.getUserOrders);
-router.get("/:id", mainOrderController.getById);
-router.patch(
-  "/:id/cancel",
-  validate(cancelOrderSchema),
-  mainOrderController.cancel,
+
+router.get(
+  "/vendor/:vendorId/orders",
+  vendorOrderController.getShopOrders,
 );
 
-// Vendor Order Routes
-router.get("/shop/:shopId", vendorOrderController.getShopOrders);
-router.get("/vendor/:id", vendorOrderController.getById);
+router.get(
+  "/vendor/orders/:orderId",
+  vendorOrderController.getById,
+);
+
 router.patch(
-  "/vendor/:id/status",
+  "/vendor/orders/:orderId/status",
   validate(updateOrderStatusSchema),
   vendorOrderController.updateStatus,
 );
 
-// Vendor processing routes
-router.post(
+router.patch(
   "/vendor/:vendorOrderId/accept",
   vendorOrderController.acceptVendorOrder,
 );
-router.post(
+
+router.patch(
   "/vendor/:vendorOrderId/verify-prescription",
   vendorOrderController.verifyPrescription,
 );
-router.post(
+
+router.patch(
   "/vendor/:vendorOrderId/process",
-  vendorOrderController.startProcessing,
+  vendorOrderController.startPacking,
 );
-router.post(
-  "/vendor/:vendorOrderId/assign-rider",
-  vendorOrderController.assignRider,
+
+router.patch(
+  "/vendor/:vendorOrderId/ready-for-pickup",
+  vendorOrderController.markReadyForPickup,
 );
-router.post(
-  "/vendor/:vendorOrderId/out-for-delivery",
-  vendorOrderController.markOutForDelivery,
+
+router.get("/:id", mainOrderController.getById);
+
+router.patch(
+  "/:id/cancel",
+  validate(cancelOrderSchema),
+  mainOrderController.cancel,
 );
 
 export default router;

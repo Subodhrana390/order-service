@@ -14,6 +14,7 @@ import { ClientSession } from "mongoose";
 import { ApiError } from "../utils/ApiError.js";
 import { kafkaClient } from "../infrastructure/kafka/client.js";
 import { config } from "../config/index.js";
+import { ShopService } from "./shop.service.js";
 
 interface createOrderDTO {
   userId: string;
@@ -36,6 +37,8 @@ interface VendorOrderDraft {
 }
 
 export class MainOrderService {
+  constructor(private readonly shopService: ShopService) { }
+
   async createOrder(
     orderData: createOrderDTO & { idempotencyKey?: string },
     productPrices: any[],
@@ -65,7 +68,7 @@ export class MainOrderService {
             : MainOrderStatus.PENDING,
           paymentInfo: {
             method: orderData.paymentMethod,
-            status: isCOD ? PaymentStatus.PAID : PaymentStatus.PENDING,
+            status: PaymentStatus.PENDING,
           },
           shippingAddress: orderData.shippingAddress,
           items: orderData.orderItems,
@@ -78,7 +81,6 @@ export class MainOrderService {
 
     if (isCOD) {
       await this.createVendorOrders(createdOrder);
-      // Emit order.created for COD orders to reserve stock immediately
       await this.emitOrderEvent("order.created", {
         orderId: createdOrder.id,
         userId: createdOrder.userId,
@@ -157,7 +159,7 @@ export class MainOrderService {
     const drafts = this.OrderSplitByVendor(order.items);
 
     for (const draft of drafts) {
-      await VendorOrder.create({
+      const { id: subOrderId } = await VendorOrder.create({
         mainOrderId: order.id,
         shopId: draft.shopId,
         userId: order.userId,
@@ -165,6 +167,7 @@ export class MainOrderService {
         subtotal: draft.subtotal,
         status: VendorOrderStatus.NEW,
       });
+      order.subOrderIds?.push(subOrderId);
     }
   }
 
@@ -193,6 +196,10 @@ export class MainOrderService {
 
     const mainOrder = await MainOrder.findOne({ id: orderId });
     if (!mainOrder) throw new ApiError(404, "Main order not found");
+
+    if (mainOrder.overAllStatus === MainOrderStatus.CANCELLED) {
+      throw new ApiError(400, "Order is already cancelled");
+    }
 
     if (bankDetails && mainOrder.paymentInfo) {
       mainOrder.paymentInfo.refundBankDetails = bankDetails;
@@ -223,47 +230,152 @@ export class MainOrderService {
 
   async updateOrderStatus(orderId: string) {
     const mainOrder = await MainOrder.findOne({ id: orderId });
-    if (!mainOrder) throw new ApiError(404, "Main order not found");
 
-    if (mainOrder.overAllStatus === MainOrderStatus.DELIVERED) return;
+    if (!mainOrder) {
+      throw new ApiError(404, "Main order not found");
+    }
+
+    if (mainOrder.overAllStatus === MainOrderStatus.DELIVERED) {
+      return;
+    }
 
     const vendorOrders = await VendorOrder.find({ mainOrderId: orderId });
+
     if (!vendorOrders.length) return;
 
-    const statuses = vendorOrders.map((v) => v.status);
+    const statuses = vendorOrders.map(v => v.status);
 
-    const all = (s: VendorOrderStatus) => statuses.every((x) => x === s);
-    const some = (s: VendorOrderStatus) => statuses.some((x) => x === s);
+    const all = (s: VendorOrderStatus) =>
+      statuses.every(x => x === s);
+
+    const some = (s: VendorOrderStatus) =>
+      statuses.some(x => x === s);
 
     let newStatus: MainOrderStatus = mainOrder.overAllStatus;
 
     if (all(VendorOrderStatus.CANCELLED)) {
       newStatus = MainOrderStatus.CANCELLED;
+
     } else if (some(VendorOrderStatus.CANCELLED)) {
       newStatus = MainOrderStatus.PARTIALLY_CANCELLED;
+
     } else if (all(VendorOrderStatus.DELIVERED)) {
       newStatus = MainOrderStatus.DELIVERED;
+
     } else if (some(VendorOrderStatus.OUT_FOR_DELIVERY)) {
       newStatus = MainOrderStatus.OUT_FOR_DELIVERY;
+    }
+
+    else if (some(VendorOrderStatus.READY_FOR_PICKUP)) {
+      newStatus = MainOrderStatus.READY_FOR_PICKUP;
+    }
+
+    else if (all(VendorOrderStatus.READY_FOR_PICKUP)) {
+      newStatus = MainOrderStatus.READY_FOR_PICKUP;
+
     } else if (some(VendorOrderStatus.PACKING)) {
       newStatus = MainOrderStatus.PACKING;
+
     } else if (some(VendorOrderStatus.ACCEPTED)) {
       newStatus = MainOrderStatus.CONFIRMED;
+
     } else if (all(VendorOrderStatus.NEW)) {
       newStatus = MainOrderStatus.PLACED;
     }
 
     if (newStatus !== mainOrder.overAllStatus) {
-      const oldStatus: MainOrderStatus = mainOrder.overAllStatus;
+
       mainOrder.overAllStatus = newStatus;
+
       await mainOrder.save();
 
-      if (newStatus === MainOrderStatus.DELIVERED && oldStatus !== MainOrderStatus.DELIVERED.toString()) {
-        await this.emitOrderEvent("order.delivered", {
+
+      /**
+       * READY_FOR_PICKUP EVENT
+       */
+      if (
+        newStatus === MainOrderStatus.READY_FOR_PICKUP &&
+        mainOrder.overAllStatus !== MainOrderStatus.READY_FOR_PICKUP
+      ) {
+
+        /**
+         * Build vendor maps in ONE pass
+         */
+        const shopIdSet = new Set<string>();
+        const vendorOrderMap: Record<string, string> = {};
+        const vendorItems: Record<string, IOrderItem[]> = {};
+
+        for (const v of vendorOrders) {
+          shopIdSet.add(v.shopId);
+
+          vendorOrderMap[v.shopId] = v.id;
+
+          if (!vendorItems[v.shopId]) {
+            vendorItems[v.shopId] = [];
+          }
+
+          vendorItems[v.shopId].push(...v.items);
+        }
+
+        const uniqueShopIds = [...shopIdSet];
+
+        /**
+         * Fetch shop details
+         */
+        const shops = await this.shopService.getShopsByIds(uniqueShopIds);
+
+
+        /**
+         * Build pickup addresses
+         */
+        const pickupAddresses = shops.map(shop => {
+          const [lng, lat] = shop.address.location.coordinates;
+
+          return {
+            shopId: shop.id,
+            vendorOrderId: vendorOrderMap[shop.id],
+            name: shop.name,
+            phone: shop.contact.phone,
+            street: shop.address.street,
+            city: shop.address.city,
+            state: shop.address.state,
+            pincode: shop.address.pincode,
+            lat,
+            lng,
+            items: vendorItems[shop.id] ?? []
+          };
+        });
+
+
+        /**
+         * Build drop address
+         */
+        const [dropLng, dropLat] =
+          mainOrder.shippingAddress.location.coordinates;
+
+        const dropAddress = {
+          name: mainOrder.shippingAddress.name,
+          phone: mainOrder.shippingAddress.phone,
+          street: mainOrder.shippingAddress.street,
+          city: mainOrder.shippingAddress.city,
+          state: mainOrder.shippingAddress.state,
+          pincode: mainOrder.shippingAddress.pincode,
+          lat: dropLat,
+          lng: dropLng
+        };
+
+
+        /**
+         * Emit READY_FOR_PICKUP event
+         */
+        await this.emitOrderEvent("order.ready_for_pickup", {
           orderId: mainOrder.id,
+          subOrderIds: vendorOrders.map(v => v.id),
           userId: mainOrder.userId,
-          items: mainOrder.items,
-          deliveredAt: new Date()
+          pickupAddresses,
+          dropAddress,
+          orderStatus: newStatus,
+          createdAt: mainOrder.createdAt
         });
       }
     }

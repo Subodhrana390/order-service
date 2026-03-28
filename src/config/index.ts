@@ -1,9 +1,11 @@
 import dotenv from "dotenv";
 import fs from 'fs';
+import path from "path";
 dotenv.config({});
 
+const nodeEnv = process.env.NODE_ENV || 'development';
 
-const caPath = '/etc/secrets/ca.pem';
+const caPath = nodeEnv === 'production' ? '/etc/secrets/ca.pem' : path.resolve(process.cwd(), 'src/certs/ca.pem');
 
 const getCA = (): string[] | undefined => {
   if (fs.existsSync(caPath)) {
@@ -12,7 +14,6 @@ const getCA = (): string[] | undefined => {
   return undefined;
 };
 
-const nodeEnv = process.env.NODE_ENV || 'development';
 
 export const config = {
   env: nodeEnv,

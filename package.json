@@ -2,12 +2,12 @@
   "name": "order-service",
   "version": "1.0.0",
   "description": "Order Microservice",
- "main": "dist/server.js",
+  "main": "dist/server.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node-dev --esm --respawn --transpile-only src/server.ts"
+    "dev": "tsx watch src/server.ts"
   },
   "dependencies": {
     "@types/ioredis": "^4.28.10",

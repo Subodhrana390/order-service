@@ -12,24 +12,48 @@ export enum ProductType {
 
 /* -------------------- Order Status -------------------- */
 
-  export enum VendorOrderStatus {
-    NEW = "NEW", // Created after payment success
-    ACCEPTED = "ACCEPTED", // Vendor accepted
-    PACKING = "PACKING", // Items being packed
-    OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY",
-    DELIVERED = "DELIVERED",
-    CANCELLED = "CANCELLED",
-  }
+export enum VendorOrderStatus {
+  NEW = "NEW", // Created after payment success
+
+  ACCEPTED = "ACCEPTED", // Vendor accepted the order
+
+  PRESCRIPTION_VERIFIED = "PRESCRIPTION_VERIFIED", // Prescription checked & approved (if required)
+
+  PACKING = "PACKING", // Items being packed
+
+  READY_FOR_PICKUP = "READY_FOR_PICKUP", // Packed and waiting for rider
+
+  RIDER_ASSIGNED = "RIDER_ASSIGNED", // Rider assigned to vendor order
+
+  OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY", // Rider picked up and delivering
+
+  DELIVERED = "DELIVERED", // Successfully delivered
+
+  CANCELLED = "CANCELLED", // Cancelled by vendor/admin/user
+}
 
 export enum MainOrderStatus {
   PENDING = "PENDING", // Waiting for online payment
+
   PLACED = "PLACED", // Payment successful / COD created
+
   CONFIRMED = "CONFIRMED", // At least one vendor accepted
-  PACKING = "PACKING", // Any vendor packing
-  OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY", // Any vendor out for delivery
-  DELIVERED = "DELIVERED", // All vendors delivered
-  CANCELLED = "CANCELLED", // All vendors cancelled OR payment failed
+
+  PRESCRIPTION_PENDING = "PRESCRIPTION_PENDING", // Waiting prescription approval (if required)
+
+  PACKING = "PACKING", // Any vendor packing items
+
+  READY_FOR_PICKUP = "READY_FOR_PICKUP", // All vendors ready for rider pickup
+
+  RIDER_ASSIGNED = "RIDER_ASSIGNED", // Rider assigned to the order
+
+  OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY", // Rider delivering order
+
+  DELIVERED = "DELIVERED", // All vendor orders delivered
+
   PARTIALLY_CANCELLED = "PARTIALLY_CANCELLED", // Some vendors cancelled
+
+  CANCELLED = "CANCELLED", // All vendors cancelled OR payment failed
 }
 
 export enum TransactionType {
@@ -48,6 +72,11 @@ export enum PaymentStatus {
   REFUNDED = "REFUNDED",
 }
 
+export interface ILocation {
+  type: "Point";
+  coordinates: [number, number];
+}
+
 export interface ShippingAddress {
   name: string;
   phone: string;
@@ -55,6 +84,7 @@ export interface ShippingAddress {
   city: string;
   state: string;
   pincode: string;
+  location: ILocation;
 }
 
 /* -------------------- Order Item -------------------- */
@@ -152,6 +182,7 @@ export interface IVendorOrder extends Document {
 
   acceptedAt?: Date;
   packingStartedAt?: Date;
+  readyForPickupAt?: Date;
   dispatchedAt?: Date;
   deliveredAt?: Date;
   cancelReason?: string;

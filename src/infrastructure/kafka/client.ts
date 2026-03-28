@@ -2,9 +2,9 @@ import { Kafka, SASLOptions, Producer, Consumer, Admin } from "kafkajs";
 import { config } from "../../config/index.js";
 
 const sasl: SASLOptions = {
-    mechanism: config.kafka.sasl.mechanism,
-    username: config.kafka.sasl.username,
-    password: config.kafka.sasl.password,
+  mechanism: config.kafka.sasl.mechanism,
+  username: config.kafka.sasl.username,
+  password: config.kafka.sasl.password,
 };
 
 class KafkaClient {
@@ -15,18 +15,18 @@ class KafkaClient {
   private isConnected = false;
 
   constructor() {
-     this.kafka = new Kafka({
-            clientId: config.kafka.clientId,
-            brokers: [config.kafka.brokers],
-            retry: {
-                initialRetryTime: config.kafka.retryDelay,
-                retries: config.kafka.retries,
-            },
-            sasl,
-            ssl: config.kafka.ssl,
-            connectionTimeout: config.kafka.connectionTimeout,
-            requestTimeout: config.kafka.requestTimeout,
-        });
+    this.kafka = new Kafka({
+      clientId: config.kafka.clientId,
+      brokers: [config.kafka.brokers],
+      retry: {
+        initialRetryTime: config.kafka.retryDelay,
+        retries: config.kafka.retries,
+      },
+      sasl,
+      ssl: config.kafka.ssl,
+      connectionTimeout: config.kafka.connectionTimeout,
+      requestTimeout: config.kafka.requestTimeout,
+    });
   }
 
   async connectProducer(): Promise<void> {

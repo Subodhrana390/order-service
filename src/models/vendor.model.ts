@@ -82,6 +82,7 @@ const VendorOrderSchema = new Schema<IVendorOrder>(
 
     dispatchedAt: Date,
     packingStartedAt: Date,
+    readyForPickupAt: Date,
     deliveredAt: Date,
     cancelReason: String,
     cancelledAt: Date,

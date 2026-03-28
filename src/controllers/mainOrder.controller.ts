@@ -19,8 +19,8 @@ export class MainOrderController {
     private readonly mainOrderService: MainOrderService,
     private readonly paymentService: PaymentService,
     private readonly vendorOrderService: VendorOrderService,
-    private readonly inventoryService: InventoryService,
-  ) {}
+    private readonly inventoryService: InventoryService
+  ) { }
 
   create = asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user?.id as string;
@@ -38,7 +38,6 @@ export class MainOrderController {
       idempotencyKey,
     } = req.body;
 
-    // Idempotency check
     if (idempotencyKey) {
       const existingOrder = await MainOrder.findOne({ userId, idempotencyKey });
       if (existingOrder) {
@@ -138,7 +137,8 @@ export class MainOrderController {
   });
 
   cancel = asyncHandler(async (req: Request, res: Response) => {
-    const { orderId, reason, bankDetails } = req.body;
+    const orderId = req.params.id as string;
+    const { reason, bankDetails } = req.body;
     const mainOrder = await this.mainOrderService.cancelOrder({
       orderId,
       reason,
@@ -189,9 +189,38 @@ export class MainOrderController {
   getUserOrders = asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user?.id;
     if (!userId) throw new ApiError(401, "Unauthorized");
-    const orders = await MainOrder.find({ userId }).sort({ createdAt: -1 });
-    res
-      .status(200)
-      .json(new ApiResponse(200, orders, "User orders fetched successfully"));
+
+    const { cursor, limit = "10" } = req.query;
+
+    const safeLimit = Math.min(Number(limit), 50);
+
+    const query: any = { userId };
+
+    if (cursor) {
+      query.createdAt = { $lt: new Date(cursor as string) };
+    }
+
+    const orders = await MainOrder.find(query)
+      .sort({ createdAt: -1 }) // latest first
+      .limit(safeLimit + 1);
+
+    let nextCursor: string | null = null;
+
+    if (orders.length > safeLimit) {
+      const lastItem = orders.pop();
+      nextCursor = lastItem?.createdAt.toISOString() || null;
+    }
+
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          orders,
+          nextCursor,
+          hasNextPage: !!nextCursor,
+        },
+        "User orders fetched successfully",
+      ),
+    );
   });
 }

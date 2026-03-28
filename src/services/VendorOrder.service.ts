@@ -39,6 +39,17 @@ export class VendorOrderService {
     const order = await VendorOrder.findOne({ id: vendorOrderId });
     if (!order) throw new ApiError(404, "Vendor order not found");
 
+    if (order.status === VendorOrderStatus.CANCELLED || order.status !== VendorOrderStatus.NEW) {
+      throw new ApiError(400, `Cannot accept a ${order.status} order`);
+    }
+
+    if (order.status !== VendorOrderStatus.NEW) {
+      throw new ApiError(
+        400,
+        `Only orders in NEW status can be accepted. Current status: ${order.status}`,
+      );
+    }
+
     order.status = VendorOrderStatus.ACCEPTED;
     order.acceptedAt = new Date();
     await order.save();
@@ -62,15 +73,17 @@ export class VendorOrderService {
       }
     });
 
+    order.status = VendorOrderStatus.PRESCRIPTION_VERIFIED;
+
     await order.save();
-    await KafkaProducer.sendOrderEvent("vendor-order.status_updated", {
+    await KafkaProducer.sendOrderEvent("vendor-order.prescription_verified", {
       mainOrderId: order.mainOrderId,
     });
 
     return order;
   }
 
-  async startProcessing(vendorOrderId: string) {
+  async startPacking(vendorOrderId: string) {
     const order = await VendorOrder.findOne({ id: vendorOrderId });
     if (!order) throw new ApiError(404, "Vendor order not found");
 
@@ -85,20 +98,12 @@ export class VendorOrderService {
     return order;
   }
 
-  async assignRider(vendorOrderId: string, riderInfo: RiderInfo) {
+  async markReadyForPickup(vendorOrderId: string) {
     const order = await VendorOrder.findOne({ id: vendorOrderId });
     if (!order) throw new ApiError(404, "Vendor order not found");
 
-    order.riderInfo = riderInfo;
-    await order.save();
-    return order;
-  }
-
-  async markOutForDelivery(vendorOrderId: string) {
-    const order = await VendorOrder.findOne({ id: vendorOrderId });
-    if (!order) throw new ApiError(404, "Vendor order not found");
-
-    order.status = VendorOrderStatus.OUT_FOR_DELIVERY;
+    order.status = VendorOrderStatus.READY_FOR_PICKUP;
+    order.readyForPickupAt = new Date();
     await order.save();
     await KafkaProducer.sendOrderEvent("vendor-order.status_updated", {
       mainOrderId: order.mainOrderId,
@@ -107,8 +112,41 @@ export class VendorOrderService {
     return order;
   }
 
-  async getShopOrders(shopId: string) {
-    return await VendorOrder.find({ shopId }).sort({ createdAt: -1 });
+  async markOrdersDelivered(mainOrderId: string) {
+    await VendorOrder.updateMany(
+      { mainOrderId },
+      { status: VendorOrderStatus.DELIVERED, deliveredAt: new Date() }
+    );
+  }
+
+
+  async getShopOrders(
+    shopId: string,
+    cursor?: string,
+    limit: number = 10,
+  ) {
+    const query: any = { shopId };
+
+    if (cursor) {
+      query.createdAt = { $lt: new Date(cursor) };
+    }
+
+    const orders = await VendorOrder.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit + 1);
+
+    let nextCursor = null;
+
+    if (orders.length > limit) {
+      const lastItem = orders.pop();
+      nextCursor = lastItem?.createdAt.toISOString();
+    }
+
+    return {
+      orders,
+      nextCursor,
+      hasNextPage: !!nextCursor,
+    };
   }
 
   async getById(vendorOrderId: string) {
@@ -121,6 +159,10 @@ export class VendorOrderService {
     const order = await VendorOrder.findOne({ id: vendorOrderId });
     if (!order) throw new ApiError(404, "Vendor order not found");
 
+    if (order.status === status) {
+      throw new ApiError(400, `Order is already in ${status} status`);
+    }
+
     order.status = status;
     await order.save();
     await KafkaProducer.sendOrderEvent("vendor-order.status_updated", {
@@ -129,4 +171,25 @@ export class VendorOrderService {
 
     return order;
   }
+
+  async updateVendorOrderRiderAssignment(
+    mainOrderId: string,
+    shopId: string,
+    riderInfo: RiderInfo
+  ) {
+    const order = await VendorOrder.findOne({
+      mainOrderId,
+      shopId,
+    });
+
+    if (!order) {
+      throw new ApiError(404, "Vendor order not found");
+    }
+
+    order.status = VendorOrderStatus.RIDER_ASSIGNED;
+    order.riderInfo = riderInfo;
+
+    await order.save();
+  }
+
 }
