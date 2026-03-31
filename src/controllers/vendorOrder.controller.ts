@@ -75,8 +75,9 @@ export class VendorOrderController {
 
     const result = await this.vendorOrderService.getShopOrders(
       shopId,
-      cursor as string | undefined,
       Number(limit),
+      undefined,
+      cursor as string | undefined,
     );
 
     res.status(200).json(

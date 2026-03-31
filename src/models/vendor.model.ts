@@ -104,6 +104,7 @@ const VendorOrderSchema = new Schema<IVendorOrder>(
   },
 );
 
+
 VendorOrderSchema.methods.generateVendorOrderNumber = function (): string {
   const date = new Date();
   const y = date.getFullYear();
@@ -112,6 +113,8 @@ VendorOrderSchema.methods.generateVendorOrderNumber = function (): string {
   const randomSuffix = crypto.randomBytes(2).toString("hex").toUpperCase();
   return `VOD${y}${m}${d}${randomSuffix}`;
 };
+
+VendorOrderSchema.index({ userId: 1, createdAt: -1, id: -1 });
 
 export const VendorOrder = model<IVendorOrder>(
   "VendorOrder",

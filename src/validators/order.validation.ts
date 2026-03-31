@@ -33,7 +33,12 @@ export const shippingAddressSchema = z.object({
   street: z.string().min(1),
   city: z.string().min(1),
   state: z.string().min(1),
-  pincode: z.string().regex(/^\d{6}$/, "Invalid pincode"),
+  postalCode: z.string().regex(/^\d{6}$/, "Invalid pincode"),
+  country: z.string().default("India"),
+  location: z.object({
+    type: z.literal("Point"),
+    coordinates: z.array(z.number()).length(2),
+  }),
 });
 
 export const createOrderSchema = z.object({

@@ -77,13 +77,14 @@ export interface ILocation {
   coordinates: [number, number];
 }
 
-export interface ShippingAddress {
+export interface IShippingAddress {
   name: string;
   phone: string;
   street: string;
   city: string;
   state: string;
-  pincode: string;
+  postalCode: string;
+  country: string;
   location: ILocation;
 }
 
@@ -153,7 +154,7 @@ export interface IMainOrder extends Document {
     refundBankDetails?: BankDetails;
   };
 
-  shippingAddress: ShippingAddress;
+  shippingAddress: IShippingAddress;
   items: IOrderItem[];
   cancelReason?: string;
 

@@ -119,33 +119,52 @@ export class VendorOrderService {
     );
   }
 
-
   async getShopOrders(
     shopId: string,
-    cursor?: string,
     limit: number = 10,
+    before?: string,
+    after?: string,
   ) {
     const query: any = { shopId };
+    let sortDirection: 1 | -1 = -1;
 
-    if (cursor) {
-      query.createdAt = { $lt: new Date(cursor) };
+    const cursorValue = after || before;
+    if (cursorValue) {
+      const [timeStr, idValue] = cursorValue.split('_');
+      const date = new Date(timeStr);
+      sortDirection = after ? -1 : 1;
+
+      const operator = after ? '$lt' : '$gt';
+      query.$or = [
+        { createdAt: { [operator]: date } },
+        { createdAt: date, id: { [operator]: idValue } }
+      ];
     }
 
-    const orders = await VendorOrder.find(query)
-      .sort({ createdAt: -1 })
+    let orders = await VendorOrder.find(query)
+      .sort({ createdAt: sortDirection, id: sortDirection })
       .limit(limit + 1);
 
-    let nextCursor = null;
+    if (before) orders.reverse();
 
-    if (orders.length > limit) {
-      const lastItem = orders.pop();
-      nextCursor = lastItem?.createdAt.toISOString();
+    const hasMore = orders.length > limit;
+    if (hasMore) {
+      if (before) orders.shift();
+      else orders.pop();
     }
+
+    const createCursor = (item: any) =>
+      item ? `${item.createdAt.toISOString()}_${item.id}` : null;
+
+    const hasPrevious = !!before ? hasMore : !!after;
+    const hasNext = !!after ? hasMore : (!before && hasMore);
 
     return {
       orders,
-      nextCursor,
-      hasNextPage: !!nextCursor,
+      prevCursor: hasPrevious && orders.length > 0 ? createCursor(orders[0]) : null,
+      nextCursor: hasNext && orders.length > 0 ? createCursor(orders[orders.length - 1]) : null,
+      hasPrevious,
+      hasNext,
     };
   }
 

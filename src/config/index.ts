@@ -14,7 +14,6 @@ const getCA = (): string[] | undefined => {
   return undefined;
 };
 
-
 export const config = {
   env: nodeEnv,
   port: Number(process.env.APP_ORDER_SERVICE_PORT || "3003"),

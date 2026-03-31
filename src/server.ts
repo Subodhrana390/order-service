@@ -8,7 +8,7 @@ const startServer = async () => {
     await mongoose.connect(config.mongodb.uri);
     console.log("✅ Order Service DB connected");
 
-    await initializeKafka();
+    // await initializeKafka();
 
     // Start HTTP server
     const server = app.listen(config.port, () => {

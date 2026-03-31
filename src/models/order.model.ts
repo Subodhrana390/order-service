@@ -1,7 +1,9 @@
 import mongoose, { Schema } from "mongoose";
 import { v4 as uuid } from "uuid";
 import {
+  ILocation,
   IMainOrder,
+  IShippingAddress,
   MainOrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -34,6 +36,35 @@ const OrderItemSchema = new Schema(
     shopId: { type: String, required: true },
     requiresPrescription: { type: Boolean, default: false },
     prescription: { type: PrescriptionSchema },
+  },
+  { _id: false },
+);
+
+const LocationSchema = new Schema<ILocation>(
+  {
+    type: {
+      type: String,
+      enum: ["Point"],
+      default: "Point",
+    },
+    coordinates: {
+      type: [Number],
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
+const ShippingAddressSchema = new Schema<IShippingAddress>(
+  {
+    name: { type: String, required: true },
+    phone: { type: String, required: true },
+    street: { type: String, required: true },
+    city: { type: String, required: true },
+    state: { type: String, required: true },
+    postalCode: { type: String, required: true },
+    country: { type: String, default: "India" },
+    location: LocationSchema
   },
   { _id: false },
 );
@@ -91,7 +122,19 @@ const MainOrderSchema = new Schema<IMainOrder>(
       street: { type: String, required: true },
       city: { type: String, required: true },
       state: { type: String, required: true },
-      pincode: { type: String, required: true },
+      postalCode: { type: String, required: true },
+      country: { type: String, default: "India" },
+      location: {
+        type: {
+          type: String,
+          enum: ["Point"],
+          default: "Point",
+        },
+        coordinates: {
+          type: [Number],
+          required: true,
+        },
+      },
     },
 
     items: { type: [OrderItemSchema], default: [] },
@@ -112,6 +155,8 @@ const MainOrderSchema = new Schema<IMainOrder>(
     },
   },
 );
+
+MainOrderSchema.index({ userId: 1, createdAt: -1, id: -1 });
 
 export const MainOrder = mongoose.model<IMainOrder>(
   "MainOrder",
