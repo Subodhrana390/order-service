@@ -11,14 +11,14 @@ export const checkConnection = async () => {
 
     console.log(
       "✅ OpenSearch connected (inventory-service):",
-      health.body.status
+      health.body.status,
     );
 
     return true;
   } catch (error) {
     console.error(
       "❌ OpenSearch connection failed (inventory-service):",
-      error
+      error,
     );
     return false;
   }

@@ -6,7 +6,7 @@ const stockLedgerSchema = new Schema<IStockLedger>(
   {
     id: {
       type: String,
-      default: uuidv4,
+      default: () => uuidv4(),
       unique: true,
       index: true,
     },

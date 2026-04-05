@@ -11,7 +11,7 @@ const inventorySchema = new Schema<IInventory, IInventoryModel>(
   {
     id: {
       type: String,
-      default: uuidv4,
+      default: () => uuidv4(),
       unique: true,
       index: true,
     },
@@ -212,8 +212,8 @@ inventorySchema.statics.findExpiringItems = function (
   return this.find({
     shopId,
     expiryDate: {
-      $lte: alertDate,
-      $gt: new Date(),
+      $lte: alertDate.toISOString(),
+      $gt: new Date().toISOString(),
     },
   });
 };
