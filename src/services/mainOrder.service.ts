@@ -85,6 +85,7 @@ export class MainOrderService {
         orderId: createdOrder.id,
         userId: createdOrder.userId,
         items: createdOrder.items,
+        totalAmount: createdOrder.totalAmount
       });
     }
 
@@ -118,6 +119,7 @@ export class MainOrderService {
       orderId: order.id,
       userId: order.userId,
       items: order.items,
+      totalAmount: order.totalAmount
     });
   }
 
@@ -133,6 +135,12 @@ export class MainOrderService {
     order.overAllStatus = MainOrderStatus.CANCELLED;
 
     await order.save();
+
+    await this.emitOrderEvent("order.cancelled", {
+      orderId: order.id,
+      userId: order.userId,
+      items: order.items
+    });
   }
 
   async handlePaymentRefunded(data: {
@@ -149,6 +157,12 @@ export class MainOrderService {
     order.overAllStatus = MainOrderStatus.CANCELLED;
 
     await order.save();
+
+    await this.emitOrderEvent("order.cancelled", {
+      orderId: order.id,
+      userId: order.userId,
+      items: order.items
+    });
   }
 
   private async createVendorOrders(order: IMainOrder) {
@@ -169,6 +183,8 @@ export class MainOrderService {
       });
       order.subOrderIds?.push(subOrderId);
     }
+
+    await order.save();
   }
 
   async updatePaymentInfo(orderId: string, transactionId: string) {
@@ -251,86 +267,65 @@ export class MainOrderService {
     const some = (s: VendorOrderStatus) =>
       statuses.some(x => x === s);
 
-    let newStatus: MainOrderStatus = mainOrder.overAllStatus;
+    const previousStatus = mainOrder.overAllStatus;
+    let newStatus: MainOrderStatus = previousStatus;
 
     if (all(VendorOrderStatus.CANCELLED)) {
       newStatus = MainOrderStatus.CANCELLED;
-
     } else if (some(VendorOrderStatus.CANCELLED)) {
       newStatus = MainOrderStatus.PARTIALLY_CANCELLED;
-
     } else if (all(VendorOrderStatus.DELIVERED)) {
       newStatus = MainOrderStatus.DELIVERED;
-
     } else if (some(VendorOrderStatus.OUT_FOR_DELIVERY)) {
       newStatus = MainOrderStatus.OUT_FOR_DELIVERY;
-    }
-
-    else if (some(VendorOrderStatus.READY_FOR_PICKUP)) {
+    } else if (some(VendorOrderStatus.RIDER_ASSIGNED)) {
+      newStatus = MainOrderStatus.RIDER_ASSIGNED;
+    } else if (all(VendorOrderStatus.READY_FOR_PICKUP) || some(VendorOrderStatus.READY_FOR_PICKUP)) {
       newStatus = MainOrderStatus.READY_FOR_PICKUP;
-    }
-
-    else if (all(VendorOrderStatus.READY_FOR_PICKUP)) {
-      newStatus = MainOrderStatus.READY_FOR_PICKUP;
-
     } else if (some(VendorOrderStatus.PACKING)) {
       newStatus = MainOrderStatus.PACKING;
-
     } else if (some(VendorOrderStatus.ACCEPTED)) {
       newStatus = MainOrderStatus.CONFIRMED;
-
     } else if (all(VendorOrderStatus.NEW)) {
       newStatus = MainOrderStatus.PLACED;
     }
 
-    if (newStatus !== mainOrder.overAllStatus) {
-
+    if (newStatus !== previousStatus) {
       mainOrder.overAllStatus = newStatus;
-
       await mainOrder.save();
 
+      // Emit status update event for notification-service
+      await this.emitOrderEvent("vendor-order.status_updated", {
+        orderId: mainOrder.id,
+        userId: mainOrder.userId,
+        status: newStatus,
+        previousStatus
+      });
 
-      /**
-       * READY_FOR_PICKUP EVENT
-       */
+      console.log(`📡 Status updated for order ${orderId}: ${previousStatus} -> ${newStatus}`);
+
       if (
         newStatus === MainOrderStatus.READY_FOR_PICKUP &&
-        mainOrder.overAllStatus !== MainOrderStatus.READY_FOR_PICKUP
+        previousStatus !== MainOrderStatus.READY_FOR_PICKUP
       ) {
-
-        /**
-         * Build vendor maps in ONE pass
-         */
         const shopIdSet = new Set<string>();
         const vendorOrderMap: Record<string, string> = {};
         const vendorItems: Record<string, IOrderItem[]> = {};
 
         for (const v of vendorOrders) {
           shopIdSet.add(v.shopId);
-
           vendorOrderMap[v.shopId] = v.id;
-
           if (!vendorItems[v.shopId]) {
             vendorItems[v.shopId] = [];
           }
-
           vendorItems[v.shopId].push(...v.items);
         }
 
         const uniqueShopIds = [...shopIdSet];
-
-        /**
-         * Fetch shop details
-         */
         const shops = await this.shopService.getShopsByIds(uniqueShopIds);
 
-
-        /**
-         * Build pickup addresses
-         */
         const pickupAddresses = shops.map(shop => {
           const [lng, lat] = shop.address.location.coordinates;
-
           return {
             shopId: shop.id,
             vendorOrderId: vendorOrderMap[shop.id],
@@ -346,13 +341,7 @@ export class MainOrderService {
           };
         });
 
-
-        /**
-         * Build drop address
-         */
-        const [dropLng, dropLat] =
-          mainOrder.shippingAddress.location.coordinates;
-
+        const [dropLng, dropLat] = mainOrder.shippingAddress.location.coordinates;
         const dropAddress = {
           name: mainOrder.shippingAddress.name,
           phone: mainOrder.shippingAddress.phone,
@@ -364,10 +353,6 @@ export class MainOrderService {
           lng: dropLng
         };
 
-
-        /**
-         * Emit READY_FOR_PICKUP event
-         */
         await this.emitOrderEvent("order.ready_for_pickup", {
           orderId: mainOrder.id,
           subOrderIds: vendorOrders.map(v => v.id),
@@ -384,18 +369,12 @@ export class MainOrderService {
   async getOrderDetails(orderId: string) {
     const mainOrder = await MainOrder.findOne({ id: orderId });
     if (!mainOrder) throw new ApiError(404, "Main order not found");
-
     const vendorOrders = await VendorOrder.find({ mainOrderId: orderId });
-
-    return {
-      mainOrder,
-      vendorOrders,
-    };
+    return { mainOrder, vendorOrders };
   }
 
   public OrderSplitByVendor(orderItems: IOrderItem[]): VendorOrderDraft[] {
     const shopMap = new Map<string, VendorOrderDraft>();
-
     for (const item of orderItems) {
       if (!shopMap.has(item.shopId)) {
         shopMap.set(item.shopId, {
@@ -404,13 +383,10 @@ export class MainOrderService {
           subtotal: 0,
         });
       }
-
       const vendorOrder = shopMap.get(item.shopId)!;
-
       vendorOrder.items.push(item);
       vendorOrder.subtotal += item.subtotal;
     }
-
     return Array.from(shopMap.values());
   }
 
@@ -420,29 +396,17 @@ export class MainOrderService {
     productPrices: any[],
   ) {
     let calculatedTotal = 0;
-
     for (const item of orderItems) {
-      const priceInfo = productPrices.find(
-        (p) => p.productId === item.productId,
-      );
+      const priceInfo = productPrices.find((p) => p.productId === item.productId);
       if (!priceInfo) {
         throw new ApiError(400, `Product price missing ${item.productId}`);
       }
-
       item.unitPrice = priceInfo.price;
       item.subtotal = item.unitPrice * item.quantity;
       calculatedTotal += item.subtotal;
     }
-
-    const payableAmount =
-      calculatedTotal +
-      clientPricing.deliveryFee -
-      clientPricing.discountAmount;
-
-    if (payableAmount < 0) {
-      throw new ApiError(400, "Invalid pricing calculation");
-    }
-
+    const payableAmount = calculatedTotal + clientPricing.deliveryFee - clientPricing.discountAmount;
+    if (payableAmount < 0) throw new ApiError(400, "Invalid pricing calculation");
     return {
       totalAmount: calculatedTotal,
       deliveryFee: clientPricing.deliveryFee,
@@ -453,11 +417,8 @@ export class MainOrderService {
 
   private generateOrderNumber(): string {
     const date = new Date();
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
     const random = crypto.randomBytes(3).toString("hex").toUpperCase();
-    return `OD-${y}${m}${d}-${random}`;
+    return `OD-${date.toISOString().slice(0, 10).replace(/-/g, "")}-${random}`;
   }
 
   private async emitOrderEvent(type: string, payload: any) {
@@ -465,12 +426,7 @@ export class MainOrderService {
       const producer = kafkaClient.getProducer();
       await producer.send({
         topic: config.kafka.topics.orderEvents,
-        messages: [
-          {
-            key: payload.orderId,
-            value: JSON.stringify({ type, payload }),
-          },
-        ],
+        messages: [{ key: payload.orderId, value: JSON.stringify({ type, payload }) }],
       });
       console.log(`📡 Emitted ${type} event for order: ${payload.orderId}`);
     } catch (error) {
@@ -478,40 +434,19 @@ export class MainOrderService {
     }
   }
 
-  public async getMainOrders(
-    userId: string,
-    limit: number = 10,
-    before?: string,
-    after?: string
-  ) {
+  public async getMainOrders(userId: string, limit: number = 10, before?: string, after?: string) {
     const query: any = { userId };
     let sortDirection: 1 | -1 = -1;
-
     const activeCursor = after || before;
-
     if (activeCursor) {
       const [timeStr, idValue] = activeCursor.split('|');
       const date = new Date(timeStr);
-
-
       const operator = after ? '$lt' : '$gt';
       sortDirection = after ? -1 : 1;
-      query.$or = [
-        { createdAt: { [operator]: date } },
-        {
-          createdAt: date,
-          id: { [after ? '$lt' : '$gt']: idValue }
-        }
-      ];
+      query.$or = [{ createdAt: { [operator]: date } }, { createdAt: date, id: { [after ? '$lt' : '$gt']: idValue } }];
     }
-
-    let orders = await MainOrder.find(query)
-      .sort({ createdAt: sortDirection, id: sortDirection })
-      .limit(limit + 1);
-    if (before) {
-      orders.reverse();
-    }
-
+    let orders = await MainOrder.find(query).sort({ createdAt: sortDirection, id: sortDirection }).limit(limit + 1);
+    if (before) orders.reverse();
     const hasMore = orders.length > limit;
     if (hasMore) {
       if (before) orders.shift();
@@ -519,13 +454,9 @@ export class MainOrderService {
     }
     const firstItem = orders[0];
     const lastItem = orders[orders.length - 1];
-
-    const createCursor = (item: any) =>
-      item ? `${item.createdAt.toISOString()}|${item.id}` : null;
-
+    const createCursor = (item: any) => item ? `${item.createdAt.toISOString()}|${item.id}` : null;
     const hasPrevious = !!before ? hasMore : !!after;
     const hasNext = !!after ? hasMore : (!before && hasMore);
-
     return {
       data: orders,
       prevCursor: hasPrevious && orders.length > 0 ? createCursor(firstItem) : null,
@@ -535,38 +466,19 @@ export class MainOrderService {
     };
   }
 
-  public async getAllAdminOrders(
-    limit: number = 10,
-    before?: string,
-    after?: string
-  ) {
+  public async getAllAdminOrders(limit: number = 10, before?: string, after?: string) {
     const query: any = {};
     let sortDirection: 1 | -1 = -1;
-
     const activeCursor = after || before;
-
     if (activeCursor) {
       const [timeStr, idValue] = activeCursor.split('|');
       const date = new Date(timeStr);
-
       const operator = after ? '$lt' : '$gt';
       sortDirection = after ? -1 : 1;
-      query.$or = [
-        { createdAt: { [operator]: date } },
-        {
-          createdAt: date,
-          id: { [after ? '$lt' : '$gt']: idValue }
-        }
-      ];
+      query.$or = [{ createdAt: { [operator]: date } }, { createdAt: date, id: { [after ? '$lt' : '$gt']: idValue } }];
     }
-
-    let orders = await MainOrder.find(query)
-      .sort({ createdAt: sortDirection, id: sortDirection })
-      .limit(limit + 1);
-    if (before) {
-      orders.reverse();
-    }
-
+    let orders = await MainOrder.find(query).sort({ createdAt: sortDirection, id: sortDirection }).limit(limit + 1);
+    if (before) orders.reverse();
     const hasMore = orders.length > limit;
     if (hasMore) {
       if (before) orders.shift();
@@ -574,19 +486,56 @@ export class MainOrderService {
     }
     const firstItem = orders[0];
     const lastItem = orders[orders.length - 1];
-
-    const createCursor = (item: any) =>
-      item ? `${item.createdAt.toISOString()}|${item.id}` : null;
-
+    const createCursor = (item: any) => item ? `${item.createdAt.toISOString()}|${item.id}` : null;
     const hasPrevious = !!before ? hasMore : !!after;
     const hasNext = !!after ? hasMore : (!before && hasMore);
-
     return {
       data: orders,
       prevCursor: hasPrevious && orders.length > 0 ? createCursor(firstItem) : null,
       nextCursor: hasNext && orders.length > 0 ? createCursor(lastItem) : null,
       hasPrevious,
       hasNext,
+    };
+  }
+
+  public async getAdminAnalytics(days = 7) {
+    const rangeDays = Math.min(Math.max(Number(days || 7), 3), 30);
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - (rangeDays - 1));
+    const orders = await MainOrder.find({ createdAt: { $gte: since } }).sort({ createdAt: 1 });
+    const buckets = new Map<string, { date: string; orders: number; revenue: number }>();
+    for (let i = 0; i < rangeDays; i += 1) {
+      const date = new Date(since);
+      date.setDate(since.getDate() + i);
+      const key = date.toISOString().slice(0, 10);
+      buckets.set(key, { date: key, orders: 0, revenue: 0 });
+    }
+    orders.forEach((order) => {
+      const key = new Date(order.createdAt).toISOString().slice(0, 10);
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+      bucket.orders += 1;
+      bucket.revenue += order.payableAmount || 0;
+    });
+    const statusBreakdown = orders.reduce((acc, order) => {
+      acc[order.overAllStatus] = (acc[order.overAllStatus] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, order) => sum + (order.payableAmount || 0), 0);
+    return {
+      summary: {
+        totalOrders,
+        totalRevenue,
+        averageOrderValue: totalOrders ? totalRevenue / totalOrders : 0,
+        deliveredOrders: statusBreakdown.DELIVERED || 0,
+        cancelledOrders: statusBreakdown.CANCELLED || 0,
+      },
+      charts: {
+        ordersByDay: Array.from(buckets.values()),
+        statusBreakdown,
+      },
     };
   }
 }

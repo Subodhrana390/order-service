@@ -119,6 +119,21 @@ export class VendorOrderService {
     );
   }
 
+  async markOrdersOutForDelivery(mainOrderId: string) {
+    await VendorOrder.updateMany(
+      {
+        mainOrderId,
+        status: {
+          $in: [
+            VendorOrderStatus.READY_FOR_PICKUP,
+            VendorOrderStatus.RIDER_ASSIGNED,
+          ],
+        },
+      },
+      { status: VendorOrderStatus.OUT_FOR_DELIVERY, dispatchedAt: new Date() },
+    );
+  }
+
   async getShopOrders(
     shopId: string,
     limit: number = 10,
@@ -172,6 +187,57 @@ export class VendorOrderService {
     const order = await VendorOrder.findOne({ id: vendorOrderId });
     if (!order) throw new ApiError(404, "Vendor order not found");
     return order;
+  }
+
+  async getShopAnalytics(shopId: string, days = 7) {
+    const rangeDays = Math.min(Math.max(Number(days || 7), 3), 30);
+    const since = new Date();
+    since.setHours(0, 0, 0, 0);
+    since.setDate(since.getDate() - (rangeDays - 1));
+
+    const orders = await VendorOrder.find({
+      shopId,
+      createdAt: { $gte: since },
+    }).sort({ createdAt: 1 });
+
+    const buckets = new Map<string, { date: string; orders: number; revenue: number }>();
+    for (let i = 0; i < rangeDays; i += 1) {
+      const date = new Date(since);
+      date.setDate(since.getDate() + i);
+      const key = date.toISOString().slice(0, 10);
+      buckets.set(key, { date: key, orders: 0, revenue: 0 });
+    }
+
+    orders.forEach((order) => {
+      const key = new Date(order.createdAt).toISOString().slice(0, 10);
+      const bucket = buckets.get(key);
+      if (!bucket) return;
+      bucket.orders += 1;
+      bucket.revenue += order.subtotal || 0;
+    });
+
+    const statusBreakdown = orders.reduce(
+      (acc, order) => {
+        acc[order.status] = (acc[order.status] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, order) => sum + (order.subtotal || 0), 0);
+
+    return {
+      summary: {
+        totalOrders,
+        totalRevenue,
+        averageOrderValue: totalOrders ? totalRevenue / totalOrders : 0,
+      },
+      charts: {
+        ordersByDay: Array.from(buckets.values()),
+        statusBreakdown,
+      },
+    };
   }
 
   async updateStatus(vendorOrderId: string, status: VendorOrderStatus) {

@@ -6,6 +6,7 @@ import {
     vendorOrderService,
     mainOrderService,
     inventoryService,
+    deliveryService,
 } from "../services/index.js";
 
 const mainOrderController = new MainOrderController(
@@ -13,6 +14,7 @@ const mainOrderController = new MainOrderController(
     paymentService,
     vendorOrderService,
     inventoryService,
+    deliveryService,
 );
 const vendorOrderController = new VendorOrderController(
     vendorOrderService,
@@ -21,6 +23,8 @@ const vendorOrderController = new VendorOrderController(
 const router = Router();
 
 router.get("/shop/:shopId", vendorOrderController.getShopOrders);
+router.get("/shop/:shopId/analytics", vendorOrderController.getShopAnalytics);
+router.get("/admin/analytics", mainOrderController.getAdminAnalytics);
 router.get("/vendor/:id", vendorOrderController.getById);
 router.get("/:id", mainOrderController.getById);
 router.get("/:id/details", mainOrderController.getOrderDetails);

@@ -7,7 +7,8 @@ import {
   paymentService,
   vendorOrderService,
   inventoryService,
-  mainOrderService
+  mainOrderService,
+  deliveryService,
 } from "../services/index.js";
 import {
   cancelOrderSchema,
@@ -22,7 +23,8 @@ const mainOrderController = new MainOrderController(
   mainOrderService,
   paymentService,
   vendorOrderService,
-  inventoryService
+  inventoryService,
+  deliveryService,
 );
 
 const vendorOrderController = new VendorOrderController(
@@ -31,6 +33,7 @@ const vendorOrderController = new VendorOrderController(
 
 // Admin Routes
 router.get("/admin", authorize("admin"), mainOrderController.getAllAdminOrders);
+router.get("/admin/analytics", authorize("admin"), mainOrderController.getAdminAnalytics);
 router.get("/admin/:id/details", authorize("admin"), mainOrderController.getOrderDetails);
 
 router.post("/", validate(createOrderSchema), mainOrderController.create);

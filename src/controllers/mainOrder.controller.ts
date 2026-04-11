@@ -8,6 +8,7 @@ import { MainOrder } from "../models/order.model.js";
 import { InventoryService } from "../services/inventory.service.js";
 import { MainOrderService } from "../services/mainOrder.service.js";
 
+import { DeliveryService } from "../services/delivery.service.js";
 import { PaymentService } from "../services/payment.service.js";
 import { VendorOrderService } from "../services/VendorOrder.service.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -19,7 +20,8 @@ export class MainOrderController {
     private readonly mainOrderService: MainOrderService,
     private readonly paymentService: PaymentService,
     private readonly vendorOrderService: VendorOrderService,
-    private readonly inventoryService: InventoryService
+    private readonly inventoryService: InventoryService,
+    private readonly deliveryService: DeliveryService,
   ) { }
 
   create = asyncHandler(async (req: Request, res: Response) => {
@@ -84,20 +86,7 @@ export class MainOrderController {
         productPrices,
       );
 
-      if (paymentMethod === PaymentMethod.COD) {
-        const vendorOrderDrafts =
-          this.mainOrderService.OrderSplitByVendor(orderItems);
-        for (const draft of vendorOrderDrafts) {
-          const vOrderId = await this.vendorOrderService.createVendorOrder({
-            mainOrderId: mainOrder.id,
-            shopId: draft.shopId,
-            userId,
-            items: draft.items,
-            subtotal: draft.subtotal,
-          });
-          vendorOrders.push(vOrderId);
-        }
-      }
+      vendorOrders = mainOrder.subOrderIds ?? [];
 
       if (paymentMethod !== PaymentMethod.COD) {
         paymentData = await this.paymentService.processPayment(
@@ -164,23 +153,31 @@ export class MainOrderController {
   });
 
   getById = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const order = await MainOrder.findOne({ id });
     if (!order) throw new ApiError(404, "Order not found");
-    res
-      .status(200)
-      .json(new ApiResponse(200, order, "Order fetched successfully"));
-  });
-
-  getOrderDetails = asyncHandler(async (req: Request, res: Response) => {
-    const id = req.params.id as string;
-    const orderDetails = await this.mainOrderService.getOrderDetails(id);
+    const delivery = await this.deliveryService.getOrderDeliverySummary(id);
     res
       .status(200)
       .json(
         new ApiResponse(
           200,
-          orderDetails,
+          { ...order.toObject(), delivery },
+          "Order fetched successfully",
+        ),
+      );
+  });
+
+  getOrderDetails = asyncHandler(async (req: Request, res: Response) => {
+    const id = req.params.id as string;
+    const orderDetails = await this.mainOrderService.getOrderDetails(id);
+    const delivery = await this.deliveryService.getOrderDeliverySummary(id);
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { ...orderDetails, delivery },
           "Order details fetched successfully",
         ),
       );
@@ -216,6 +213,20 @@ export class MainOrderController {
         200,
         orderswithcursor,
         "All admin orders fetched successfully",
+      ),
+    );
+  });
+
+  getAdminAnalytics = asyncHandler(async (req: Request, res: Response) => {
+    const data = await this.mainOrderService.getAdminAnalytics(
+      req.query.days ? Number(req.query.days) : undefined,
+    );
+
+    res.status(200).json(
+      new ApiResponse(
+        200,
+        data,
+        "Admin order analytics fetched successfully",
       ),
     );
   });

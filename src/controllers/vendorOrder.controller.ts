@@ -68,7 +68,7 @@ export class VendorOrderController {
   });
 
   getShopOrders = asyncHandler(async (req: Request, res: Response) => {
-    const shopId = req.params.vendorId as string;
+    const shopId = (req.params.vendorId || req.params.shopId) as string;
     if (!shopId) throw new ApiError(400, "shopId is required");
 
     const { cursor, limit = "10" } = req.query;
@@ -86,7 +86,7 @@ export class VendorOrderController {
   });
 
   getById = asyncHandler(async (req: Request, res: Response) => {
-    const id = req.params.orderId as string;
+    const id = (req.params.orderId || req.params.id) as string;
     if (!id) throw new ApiError(400, "vendorOrderId is required");
 
     const order = await this.vendorOrderService.getById(id);
@@ -96,8 +96,22 @@ export class VendorOrderController {
       .json(new ApiResponse(200, order, "Order fetched successfully"));
   });
 
+  getShopAnalytics = asyncHandler(async (req: Request, res: Response) => {
+    const shopId = req.params.shopId as string;
+    if (!shopId) throw new ApiError(400, "shopId is required");
+
+    const data = await this.vendorOrderService.getShopAnalytics(
+      shopId,
+      req.query.days ? Number(req.query.days) : undefined,
+    );
+
+    res
+      .status(200)
+      .json(new ApiResponse(200, data, "Shop analytics fetched successfully"));
+  });
+
   updateStatus = asyncHandler(async (req: Request, res: Response) => {
-    const id = req.params.orderId as string;
+    const id = (req.params.orderId || req.params.id) as string;
     const { status } = req.body;
     if (!id) throw new ApiError(400, "vendorOrderId is required");
     if (!status) throw new ApiError(400, "status is required");

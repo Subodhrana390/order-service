@@ -26,6 +26,7 @@ export class PaymentEventHandler {
           orderId: payload.orderId,
           transactionId: payload.transactionId,
         });
+        break;
 
       default:
         break;

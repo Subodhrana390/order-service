@@ -57,7 +57,6 @@ export class OrderEventHandler {
 
       case "delivery.order_delivered":
         if (payload.mainOrderId) {
-
           await this.vendorOrderService.markOrdersDelivered(
             payload.mainOrderId
           );
@@ -68,8 +67,21 @@ export class OrderEventHandler {
         }
         break;
 
+      case "delivery.out_for_delivery":
+        if (payload.mainOrderId) {
+          await this.vendorOrderService.markOrdersOutForDelivery(
+            payload.mainOrderId,
+          );
+
+          await this.mainOrderService.updateOrderStatus(
+            payload.mainOrderId,
+          );
+        }
+        break;
+
       case "order.cancelled":
         if (payload.orderId) {
+          // Initiate refund based on payment method
           if (payload.paymentMethod === PaymentMethod.RAZORPAY) {
             await this.paymentService.refundPayment(
               payload.orderId,
@@ -85,10 +97,6 @@ export class OrderEventHandler {
               payload.reason || "Order cancelled",
             );
           }
-
-          await this.mainOrderService.handlePaymentFailed({
-            orderId: payload.orderId,
-          });
         }
         break;
 
