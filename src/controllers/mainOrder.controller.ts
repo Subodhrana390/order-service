@@ -185,6 +185,7 @@ export class MainOrderController {
 
   getUserOrders = asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user?.id;
+    console.log(userId)
     if (!userId) throw new ApiError(401, "Unauthorized");
 
     const { cursor, limit = "10" } = req.query;
